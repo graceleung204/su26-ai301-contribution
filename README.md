@@ -9,7 +9,6 @@
 
 ## Why I Chose This Issue
 
-[1-2 paragraphs explaining why this issue interests you, how it matches your skills/learning goals, what you hope to learn]
 I am interested in this issue because it is related to Java and Javascript and backend service layer refactorization. I have experiences working on backend development and payments related services, so this issue seems to be more align with my expertise. 
 
 I understand that currently the billing save/update actions are still in the Struts action which is in the controller layer, but should be moved to transactional layer for better peforamnces. This is mainly a refactoring and writing regression tests to make sure the changes work and is still compatible. 
