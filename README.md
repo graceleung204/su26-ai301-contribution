@@ -19,19 +19,36 @@ I understand that currently the billing save/update actions are still in the Str
 
 ### Problem Description
 
-[In your own words, what's broken or missing?]
+BC billing save/update actions are currently performing multiple DAO writes directly inside Struts action classes. This creates a risk where a failure in any later DAO call can leave the system in a partially persisted state (e.g., billing rows saved but related appointment or master records not updated).
+
+The current PR improved validation and removed unsafe logging, but did not address the underlying architectural issue of missing transactional boundaries across these multi-step persistence operations.
 
 ### Expected Behavior
 
-[What should happen?]
+All billing-related persistence operations (billing rows, billing master records, appointment updates/archival, WCB linkage, and receipt redirect prerequisites) should be executed within a single transactional service boundary.
+
+If any step fails, the entire operation should be rolled back to prevent partial data persistence and ensure atomicity.
+
+Controller (Struts Action) code should only handle:
+
+Request validation
+Authorization
+Delegation to service layer
+Response handling / redirects
 
 ### Current Behavior
 
-[What actually happens?]
+BillingSaveBilling2Action and BillingUpdateBilling2Action directly invoke multiple DAO operations sequentially.
+No unified transaction boundary exists across these operations.
+If a failure occurs after initial DAO writes succeed, partial data may be committed.
+Error handling is inconsistent and does not guarantee rollback of earlier writes.
 
 ### Affected Components
 
-[Which parts of the codebase are involved?]
+BillingSaveBilling2Action
+BillingUpdateBilling2Action
+Billing DAO layer (billing rows, billing master, appointment, WCB linkage)
+Receipt/redirect prerequisite logic tied to billing save/update flow
 
 ---
 
@@ -39,19 +56,50 @@ I understand that currently the billing save/update actions are still in the Str
 
 ### Environment Setup
 
-[Notes on setting up your local development environment - challenges you faced, how you solved them]
+The CARLOS EMR development environment was set up using the DevContainer workflow.
+
+Key setup steps:
+
+Installed Docker Desktop and VS Code Dev Containers extension
+Cloned repository and opened project in VS Code
+Reopened project inside DevContainer (Reopen in Container)
+Waited for initial build to complete (Maven + DB initialization)
+Verified application running at http://localhost:8080
+Logged in using dev credentials:
+Username: carlosdoc
+Password: carlos2026
+PIN: 2026
+
+
 
 ### Steps to Reproduce
 
-1. [Step 1]
-2. [Step 2]
-3. [Observed result]
+Although full deterministic reproduction requires simulating DAO failure mid-transaction, the issue can be observed under partial failure conditions in the billing flow:
+
+Step 1: Start CARLOS EMR in DevContainer environment
+Step 2: Log in to the application
+Step 3: Navigate to billing workflow:
+- Create or update a billing entry via BillingSaveBilling2Action or BillingUpdateBilling2Action
+- Modify execution flow (or simulate failure condition):
+- Force a DAO exception after initial billing row insert (e.g., DB constraint violation, network interruption, or injected failure in later DAO call such as appointment update or WCB linkage)
+- Submit billing save/update request
+
+Observed result:
+
+- Initial billing records are persisted
+- Subsequent DAO operation fails
+- Related entities (billing master / appointment / WCB linkage) are not consistently updated
+- System remains in partially committed state
 
 ### Reproduction Evidence
 
 - **Commit showing reproduction:** [Link to commit in your fork]
-- **Screenshots/logs:** [If applicable]
-- **My findings:** [What you discovered during reproduction]
+- **Screenshots/logs:** 
+- **My findings:**
+No transactional boundary wraps the full billing save/update flow
+Each DAO call commits independently instead of participating in a single atomic transaction
+Failure in later stage does not rollback earlier writes
+Confirms need for service-layer transaction refactor as described in PR scope
 
 ---
 
