@@ -3,7 +3,7 @@
 **Contribution Number:** [1]  
 **Student:** [Grace Leung]  
 **Issue:** [[GitHub issue link](https://github.com/carlos-emr/carlos/issues/2149)]  
-**Status:** [Phase I] [Complete]
+**Status:** [Phase III] [IN PROGRESS]
 
 ---
 
@@ -107,30 +107,79 @@ Confirms need for service-layer transaction refactor as described in PR scope
 
 ### Analysis
 
-[Your analysis of the root cause - what's causing the issue?]
+Based on the PR review comments and initial code inspection, the likely root cause is that BillingSaveBilling2Action and BillingUpdateBilling2Action perform multiple persistence operations directly from the Struts action layer.
+
+These actions appear to execute several DAO writes sequentially, including billing row persistence, billing master updates, appointment updates, WCB linkage operations, and receipt-related processing. Because these operations are not wrapped in a single transactional service boundary, a failure in a later DAO call may leave earlier writes committed, resulting in partial persistence and inconsistent billing data.
+
+The issue is primarily architectural rather than a validation or security problem. Business logic and persistence orchestration currently reside in the controller layer, making transaction management difficult and failure behavior harder to test.Based on the PR review comments and initial code inspection, the likely root cause is that BillingSaveBilling2Action and BillingUpdateBilling2Action perform multiple persistence operations directly from the Struts action layer.
+
+These actions appear to execute several DAO writes sequentially, including billing row persistence, billing master updates, appointment updates, WCB linkage operations, and receipt-related processing. Because these operations are not wrapped in a single transactional service boundary, a failure in a later DAO call may leave earlier writes committed, resulting in partial persistence and inconsistent billing data.
+
+The issue is primarily architectural rather than a validation or security problem. Business logic and persistence orchestration currently reside in the controller layer, making transaction management difficult and failure behavior harder to test.
 
 ### Proposed Solution
 
-[High-level description of your fix approach]
+Introduce a dedicated service-layer transaction boundary for billing save and update workflows.
+
+The Struts actions should be responsible only for request validation, authorization checks, and response handling. All billing-related persistence operations should be delegated to a transactional service method that executes the workflow atomically.
+
+This approach ensures that:
+
+- All billing-related updates succeed together or fail together.
+- Partial persistence is prevented through rollback behavior.
+- Business logic becomes easier to test independently of the web layer.
+- Future billing enhancements can be implemented within a consistent service architecture.
 
 ### Implementation Plan
 
 Using UMPIRE framework (adapted):
 
-**Understand:** [Restate the problem]
+**Understand:** The billing save and update flows currently perform multiple DAO writes directly within Struts actions. If one operation succeeds and a later operation fails, the system may be left in a partially updated state.
 
-**Match:** [What similar patterns/solutions exist in the codebase?]
+The goal is to move persistence orchestration into a transactional service layer while preserving existing billing behavior.
+
+**Match:** Similar patterns likely already exist elsewhere in the application where:
+
+- Service classes coordinate multiple DAO operations.
+- Spring-managed transactions are used to ensure atomic updates.
+- Controllers delegate business operations to services rather than interacting with DAOs directly.
+
+Before implementation, identify existing transactional service implementations that can be used as a reference.
 
 **Plan:** [Step-by-step implementation plan]
-1. [Modify file X to do Y]
-2. [Add function Z]
-3. [Update tests]
+1. Inspect BillingSaveBilling2Action and document all DAO operations performed during save workflows
+2. Inspect BillingUpdateBilling2Action and document all DAO operations performed during update workflows
+3. Identify any existing billing service classes or transactional service patterns in the codebase.
+4. Create or extend a billing service responsible for coordinating the full save workflow.
+5. Create or extend a billing service responsible for coordinating the full update workflow.
+6. Move DAO orchestration logic from the Struts actions into service methods.
+7. Apply transactional boundaries to the service methods.
+8. Refactor actions to delegate to the service layer.
+9. Add regression tests covering rollback behavior when failures occur during later persistence steps.
+10. Verify existing billing functionality continues to behave as before.
 
-**Implement:** [Link to your branch/commits as you work]
+**Implement:** TBD
 
-**Review:** [Self-review checklist - does it follow the project's contribution guidelines?]
+**Review:** 
+- No DAO writes remain directly in Struts actions.
+- Transaction boundaries exist at the service layer.
+- Existing billing behavior is preserved.
+- Rollback behavior is tested.
+- New code follows existing project conventions.
+- No unnecessary functional changes are introduced.
+- Logging and error handling remain consistent with project standards.
+- Tests pass locally.
 
-**Evaluate:** [How will you verify it works?]
+**Evaluate:** 
+
+1. Execute existing billing save workflow and confirm successful persistence.
+2. Execute existing billing update workflow and confirm successful persistence.
+3. Simulate failure after the first DAO write and verify rollback occurs.
+4. Simulate failure during appointment update processing and verify rollback occurs.
+5. Simulate failure during WCB linkage processing and verify rollback occurs.
+6. Run relevant unit and integration tests.
+7. Perform manual regression testing on billing-related user flows.
+8. Confirm no partial billing data remains after simulated failures.
 
 ---
 
@@ -138,9 +187,9 @@ Using UMPIRE framework (adapted):
 
 ### Unit Tests
 
-- [ ] Test case 1: [Description]
-- [ ] Test case 2: [Description]
-- [ ] Test case 3: [Description]
+- [ ] Test case 1: Verify billing save succeeds when all DAO operations complete successfully.
+- [ ] Test case 2: Verify transaction rollback occurs when a failure happens after the initial billing record is saved.
+- [ ] Test case 3: Verify billing update succeeds and all related records are updated within the same transaction
 
 ### Integration Tests
 
@@ -155,17 +204,23 @@ Using UMPIRE framework (adapted):
 
 ## Implementation Notes
 
-### Week [X] Progress
+### Week 1 Progress
 
-[What you built this week, challenges faced, decisions made]
+1. Set up the CARLOS dev environment and got the application running locally.
+2. Reviewed the PR comments and started looking through the billing save/update flow.
+3. Identified that BillingSaveBilling2Action and BillingUpdateBilling2Action perform multiple DAO operations directly.
+4. Started tracing the code to understand where transaction boundaries should be introduced.
 
-### Week [Y] Progress
+Challenges: The billing flow touches several related operations, so it took some time to follow the full execution path.
 
-[Continue documenting as you work]
 
 ### Code Changes
 
-- **Files modified:** [List]
+- **Files modified:**
+  BillingSaveBilling2Action
+  BillingUpdateBilling2Action
+  Billing service classes
+  Billing-related tests
 - **Key commits:** [Links to important commits]
 - **Approach decisions:** [Why you chose certain approaches]
 
